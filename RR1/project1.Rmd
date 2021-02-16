@@ -1,0 +1,135 @@
+---
+title: "RR2"
+author: "Hang Li"
+date: "2/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(plyr)
+library(lattice)
+library(lubridate)
+```
+
+## Loading data
+
+Download and unzip the file into our WD.
+
+```{r load}
+setwd("C:/Users/Ch2ya/Desktop/RR1")
+activity <- read.csv("activity.csv")
+str(activity)
+```
+We see that our data is ready for analysis.
+
+## Mean total steps per day
+
+We remove entries without step data and group them by dates. The histogram, mean, and median is given by
+
+```{r mean}
+act <- melt(activity[which(!is.na(activity$steps)), ], id.vars = c("date", "interval"))
+ss <- dcast(act, date ~ variable, sum)
+
+hist(ss$steps, main = "Histogram of steps per day", xlab = "steps per day", ylab = "days", breaks = 10, col = "purple")
+abline(v = mean(ss$steps), lty = 1, lwd = 2)
+legend(legend="mean","topright",lty = 1, lwd = 2)
+
+summary(ss$steps)
+```
+
+
+## Daily activity pattern
+
+We now make a time series plot of the average steps taken
+
+```{r time}
+stepsint <- dcast(act, interval ~ variable, mean, na.rm = TRUE)
+plot(stepsint$interval, stepsint$steps, ty = "l", xlab = "interval", ylab = "steps", main = "Average steps over days on time interval")
+```
+
+The time interval of the maximum number of steps is given by
+
+```{r max steps}
+stepsint$interval[which.max(stepsint$steps)]
+```
+
+4. Imputing missing values
+--------------------------
+
+The number of entries with NA as steps is given by 
+```{r NA}
+nrow(activity[is.na(activity$steps),])
+```
+
+One way to impute the missing values is to substitute in the average interval based on the day of the week.
+```{r impute }
+inputed <- lapply(split(activity, activity$interval), function(x) {
+        x$steps[which(is.na(x$steps))] <- mean(x$steps, na.rm = TRUE)
+        return(x)})
+inputed <- do.call("rbind", inputed)
+row.names(inputed) <- NULL
+inputed <- split(inputed, inputed$date)
+df <- lapply(inputed, function(x) {
+        x$steps[which(is.na(x$steps))] <- mean(x$steps, na.rm = TRUE)
+        return(x)})
+inputed <- do.call("rbind", inputed)
+row.names(inputed) <- NULL
+act2 <- melt(inputed, id.vars = c("date", "interval"))
+steps_sum <- dcast(act2, date ~ variable, sum, na.rm = TRUE)
+```
+
+We now compare the histograms
+```{r total step per day histogram2}
+par(mfrow=c(1,2))
+hist(steps_sum$steps, main = "Steps per Day with Imputed Values", 
+     xlab = "steps per day", ylab = "days", 
+     breaks = 10, col = "red")
+abline(v = mean(steps_sum$steps), lty = 1, lwd = 2, col = "black")
+legend(x = "topright", "Mean", lty = c(2, 1), lwd = c(2, 2))
+hist(ss$steps, main = "Histogram of steps per day", xlab = "steps per day", ylab = "days", breaks = 10, col = "purple")
+abline(v = mean(ss$steps), lty = 1, lwd = 2)
+legend(legend="mean","topright",lty = 1, lwd = 2)
+```
+
+We can we the histograms are slightly different.
+
+## Weekdays vs Weekends
+
+We now lable days with weekdays and weekends
+
+```{r weekday status}
+weekdays <- which(weekdays(as.Date(inputed$date)) != "Saturday" &
+              weekdays(as.Date(inputed$date)) != "Sunday")
+weekends <- which(weekdays(as.Date(inputed$date)) == "Saturday" |
+              weekdays(as.Date(inputed$date)) == "Sunday")
+temp <- c(rep("a", length(inputed)))
+temp[weekends] <- "weekend"
+temp[weekdays] <- "weekday"
+names(temp) <- "day"
+inputed <- cbind(inputed, temp)
+names(inputed)[4] <- "day"
+inputedsplit <- split(inputed, inputed$day)
+weekint <- lapply(inputedsplit, function(x) {
+        temp <- aggregate(x$steps, list(x$interval), mean)
+        names(temp) <- c("interval", "steps")
+        return(temp)
+})
+weekint <- do.call("rbind", weekint)
+weekdays <- grep("weekday" ,row.names(weekint))
+weekends <- grep("weekend" ,row.names(weekint))
+temp <- c(rep("a", length(weekint$steps)))
+temp[weekdays] <- "weekdays"
+temp[weekends] <- "weekends"
+weekint <- cbind(weekint, temp)
+row.names(weekint) <- NULL
+names(weekint)[3] <- "day"
+
+ggplot(weekint, aes(interval, steps)) + geom_line() + facet_grid(day ~ .) 
+```
+
+We see that step trends varies between weekdays and weekends.
+
